@@ -1,0 +1,42 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: fraud-service
+  data:
+    redis:
+      host: keen-yak-170978.upstash.io
+      port: 6379
+      password: gQAAAAAAApviAAIgcDIyYzVjMDczOGQ3NjE0ODIxODVlNjUyZDk1M2Y0ZWE3MA
+      ssl:
+        enabled: true
+  kafka:
+    consumer:
+      bootstrap-servers: localhost:9092
+      group-id: fraud-evaluation-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.bank.transaction.dto.event,com.bank.fraud.dto.event"
+    producer:
+      bootstrap-servers: localhost:9092
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+fraud:
+  rules:
+    threshold:
+      max-amount: 100000
+    velocity:
+      max-count: 5
+      time-window-seconds: 60
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://localhost:9411/api/v2/spans
