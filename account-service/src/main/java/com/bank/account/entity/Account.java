@@ -53,6 +53,9 @@ public class Account {
     @UpdateTimestamp
     private LocalDateTime updatedat;
 
+    @Version
+    private Long version;
+
     @PrePersist
     protected void onCreate() {
         this.createdat = LocalDateTime.now();
