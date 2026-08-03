@@ -1,12 +1,11 @@
 package com.bank.fraud.engine.rules;
 
 import com.bank.fraud.dto.event.TransactionEventDTO;
-import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
-public class BlacklistRule {
+public class BlacklistRule implements FraudRule {
 
     private final RedisTemplate<String, String> redisTemplate;
     private static final String BLACKLIST_KEY = "blacklist:accounts";
@@ -15,13 +14,22 @@ public class BlacklistRule {
         this.redisTemplate = redisTemplate;
     }
 
-    public boolean isFraud(TransactionEventDTO event) {
+    @Override
+    public int calculateRiskScore(TransactionEventDTO event) {
         Boolean isSenderBlacklisted = false;
         if (event.getSenderAccountId() != null && !event.getSenderAccountId().isEmpty()) {
             isSenderBlacklisted = redisTemplate.opsForSet().isMember(BLACKLIST_KEY, event.getSenderAccountId());
         }
         Boolean isReceiverBlacklisted = redisTemplate.opsForSet().isMember(BLACKLIST_KEY, event.getReceiverAccountId());
         
-        return Boolean.TRUE.equals(isSenderBlacklisted) || Boolean.TRUE.equals(isReceiverBlacklisted);
+        if (Boolean.TRUE.equals(isSenderBlacklisted) || Boolean.TRUE.equals(isReceiverBlacklisted)) {
+            return 100; // Immediate block
+        }
+        return 0;
+    }
+
+    @Override
+    public String getRuleName() {
+        return "BlacklistRule";
     }
 }

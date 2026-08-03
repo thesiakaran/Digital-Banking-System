@@ -7,12 +7,27 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 
 @Component
-public class ThresholdRule {
+public class ThresholdRule implements FraudRule {
+
+    @Value("${fraud.rules.threshold.high-amount:10000}")
+    private BigDecimal highAmount;
 
     @Value("${fraud.rules.threshold.max-amount:100000}")
     private BigDecimal maxAmount;
 
-    public boolean isFraud(TransactionEventDTO event) {
-        return event.getAmount().compareTo(maxAmount) > 0;
+    @Override
+    public int calculateRiskScore(TransactionEventDTO event) {
+        if (event.getAmount().compareTo(maxAmount) > 0) {
+            return 100; // Impossible amount, instant block
+        }
+        if (event.getAmount().compareTo(highAmount) > 0) {
+            return 30; // 30 points for unusually high amount
+        }
+        return 0;
+    }
+
+    @Override
+    public String getRuleName() {
+        return "ThresholdRule";
     }
 }

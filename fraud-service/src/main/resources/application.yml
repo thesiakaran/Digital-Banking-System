@@ -4,16 +4,28 @@ server:
 spring:
   application:
     name: fraud-service
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/fraud_db
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:1234}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
     redis:
-      host: keen-yak-170978.upstash.io
-      port: 6379
-      password: gQAAAAAAApviAAIgcDIyYzVjMDczOGQ3NjE0ODIxODVlNjUyZDk1M2Y0ZWE3MA
+      host: ${REDIS_HOST:keen-yak-170978.upstash.io}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:gQAAAAAAApviAAIgcDIyYzVjMDczOGQ3NjE0ODIxODVlNjUyZDk1M2Y0ZWE3MA}
       ssl:
-        enabled: true
+        enabled: ${REDIS_SSL:true}
   kafka:
     consumer:
-      bootstrap-servers: localhost:9092
+      bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
       group-id: fraud-evaluation-group
       auto-offset-reset: earliest
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
@@ -21,7 +33,7 @@ spring:
       properties:
         spring.json.trusted.packages: "com.bank.transaction.dto.event,com.bank.fraud.dto.event"
     producer:
-      bootstrap-servers: localhost:9092
+      bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
 
@@ -39,4 +51,4 @@ management:
       probability: 1.0
   zipkin:
     tracing:
-      endpoint: http://localhost:9411/api/v2/spans
+      endpoint: http://${ZIPKIN_HOST:localhost}:9411/api/v2/spans

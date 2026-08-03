@@ -12,7 +12,7 @@ import java.time.LocalDate;
 
 @Component
 @Slf4j
-public class DailyLimitRule {
+public class DailyLimitRule implements FraudRule {
 
     private final RedisTemplate<String, String> redisTemplate;
 
@@ -23,28 +23,30 @@ public class DailyLimitRule {
     @Value("${fraud.rules.dailylimit.max-amount:15000}")
     private BigDecimal maxDailyAmount;
 
-    public boolean isFraud(TransactionEventDTO event) {
+    @Override
+    public int calculateRiskScore(TransactionEventDTO event) {
         String accountId = event.getSenderAccountId();
         if (accountId == null || accountId.isEmpty() || "CASH".equals(accountId)) {
-            return false; // Deposits or system transfers don't count towards sending daily limit
+            return 0; 
         }
 
         String today = LocalDate.now().toString();
         String key = "dailylimit:account:" + accountId + ":" + today;
         
-        // Increment daily total in Redis
-        Double currentTotal = redisTemplate.opsForValue().increment(key, event.getAmount().doubleValue());
-        
-        // If this is the first transaction of the day, set expiration to 24 hours
-        if (currentTotal != null && currentTotal.equals(event.getAmount().doubleValue())) {
-            redisTemplate.expire(key, Duration.ofHours(24));
-        }
+        String existing = redisTemplate.opsForValue().get(key);
+        BigDecimal previousTotal = (existing != null) ? new BigDecimal(existing) : BigDecimal.ZERO;
+        BigDecimal currentTotal = previousTotal.add(event.getAmount());
+        redisTemplate.opsForValue().set(key, currentTotal.toPlainString(), Duration.ofHours(24));
 
-        if (currentTotal != null && BigDecimal.valueOf(currentTotal).compareTo(maxDailyAmount) > 0) {
-            log.warn("Daily Limit breach for account {}: attempted total is ${}, limit is ${}", 
-                     accountId, currentTotal, maxDailyAmount);
-            return true;
+        if (currentTotal.compareTo(maxDailyAmount) > 0) {
+            log.warn("Daily Limit breach for account {}: attempted total is ${}", accountId, currentTotal);
+            return 100; // Instant block if daily limit breached
         }
-        return false;
+        return 0;
+    }
+
+    @Override
+    public String getRuleName() {
+        return "DailyLimitRule";
     }
 }

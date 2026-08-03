@@ -21,7 +21,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import com.bank.transaction.dto.event.FraudResultEventDTO;
-import com.bank.transaction.dto.event.DepositEventDTO;
 
 @Service
 @RequiredArgsConstructor
@@ -30,7 +29,6 @@ public class TransactionServiceImpl implements TransactionService {
 
     private final TransactionRepository transactionRepository;
     private final KafkaTemplate<String, TransactionEventDTO> kafkaTemplate;
-    private final KafkaTemplate<String, DepositEventDTO> depositKafkaTemplate;
     private final WebClient.Builder webClientBuilder;
 
     @Value("${account-service.url}")
