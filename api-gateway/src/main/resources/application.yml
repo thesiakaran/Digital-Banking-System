@@ -19,12 +19,37 @@ spring:
             - Path=/api/transactions/**
           filters:
             - AuthenticationFilter
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 5
+                redis-rate-limiter.burstCapacity: 10
+                redis-rate-limiter.requestedTokens: 1
+                key-resolver: "#{@ipKeyResolver}"
+            - name: CircuitBreaker
+              args:
+                name: transactionCircuitBreaker
+                fallbackUri: forward:/fallback/transaction
         - id: fraud-service
           uri: http://localhost:8083
           predicates:
             - Path=/api/fraud/**
           filters:
             - AuthenticationFilter
+            - name: CircuitBreaker
+              args:
+                name: fraudCircuitBreaker
+                fallbackUri: forward:/fallback/fraud
+
+resilience4j.circuitbreaker:
+  instances:
+    transactionCircuitBreaker:
+      slidingWindowSize: 5
+      failureRateThreshold: 50
+      waitDurationInOpenState: 10s
+    fraudCircuitBreaker:
+      slidingWindowSize: 5
+      failureRateThreshold: 50
+      waitDurationInOpenState: 10s
 
 management:
   tracing:

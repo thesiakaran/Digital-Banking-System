@@ -599,6 +599,7 @@
             document.getElementById('page-' + name).classList.add('active');
             event.currentTarget.classList.add('active');
             if (name === 'fraud') loadFraudAlerts();
+            if (name === 'transactions') loadTransactions();
         }
 
         // ─── Toast ───
@@ -715,6 +716,14 @@
             }
         }
 
+        window.mockFraudAlerts = window.mockFraudAlerts || [
+            { id: 9021, transactionId: 'TXN-' + Date.now(), senderAccountId: 'ACC-552190', amount: 5000, riskScore: 110, reason: 'Velocity Rule Breach: 5 transfers in 60s', severity: 'HIGH', status: 'OPEN' },
+            { id: 9022, transactionId: 'TXN-' + (Date.now()-86000), senderAccountId: 'ACC-119432', amount: 500, riskScore: 85, reason: 'New Payee + Round Amount ($500.00)', severity: 'MEDIUM', status: 'INVESTIGATING' },
+            { id: 9023, transactionId: 'TXN-' + (Date.now()-120000), senderAccountId: 'ACC-883120', amount: 150000, riskScore: 150, reason: 'Threshold Exceeded (>$100,000)', severity: 'CRITICAL', status: 'OPEN' }
+        ];
+        
+        window.mockTransactions = window.mockTransactions || [];
+
         async function api(path, opts = {}) {
             if (!jwtToken && path !== '/api/auth/login') {
                 openModal('login');
@@ -754,13 +763,53 @@
                         return newAcc;
                     }
                     if (path === '/api/transactions' && opts.method === 'POST') {
-                        return { status: 'SUCCESS', transactionId: 'TXN-' + Date.now() };
+                        const payload = JSON.parse(opts.body);
+                        const sender = payload.senderAccountNumber;
+                        const receiver = payload.receiverAccountNumber;
+                        const amount = payload.amount;
+
+                        // Track Velocity
+                        window.txTimestamps = window.txTimestamps || [];
+                        const now = Date.now();
+                        window.txTimestamps.push(now);
+                        // keep only last 60s
+                        window.txTimestamps = window.txTimestamps.filter(t => (now - t) < 60000);
+                        
+                        // 1. Validate if accounts actually exist locally
+                        const senderExists = knownAccounts.find(a => (a.accountNumber || a.accountnumber || a) === sender);
+                        const receiverExists = knownAccounts.find(a => (a.accountNumber || a.accountnumber || a) === receiver);
+
+                        if (!senderExists) {
+                            throw new Error("Transaction Failed: Sender account does not exist in the database.");
+                        }
+                        if (!receiverExists) {
+                            throw new Error("SAGA Rollback: Receiver account not found. Funds returned to sender.");
+                        }
+
+                        // 3. Simulate Fraud Engine Logic (Velocity Rule)
+                        if (window.txTimestamps.length > 3) {
+                            window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, severity: 'HIGH', status: 'OPEN' });
+                            throw new Error("FRAUD BLOCKED: Velocity Rule Breach. Too many transactions in 60s.");
+                        }
+                        
+                        // 2. Simulate Fraud Engine Logic (Threshold Rule)
+                        if (amount > 100000) {
+                            window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 150, severity: 'CRITICAL', status: 'OPEN' });
+                            throw new Error("FRAUD BLOCKED: Amount exceeds maximum threshold limit. SAGA Rollback executed.");
+                        }
+
+                        const successTxn = { id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'SUCCESS' };
+                        window.mockTransactions.unshift(successTxn);
+                        return successTxn;
                     }
-                    if (path === '/api/fraud/alerts') {
-                        return { content: [] };
+                    if (path === '/api/transactions' && (!opts.method || opts.method === 'GET')) {
+                        return { content: window.mockTransactions };
+                    }
+                    if (path.startsWith('/api/fraud/alerts')) {
+                        return { content: window.mockFraudAlerts };
                     }
                     if (path === '/api/fraud/statistics') {
-                        return { blockedCount: 0, flaggedCount: 0, totalRiskScore: 0 };
+                        return { blockedCount: 142 + window.mockFraudAlerts.length - 3, flaggedCount: 89, totalRiskScore: 5240 };
                     }
                     if (path === '/api/fraud/blacklist') {
                         return [];
@@ -825,11 +874,11 @@
             let rows = '';
             for (const acc of knownAccounts) {
                 try {
-                    const data = await api('/api/accounts/' + acc);
+                    const data = typeof acc === 'object' ? acc : await api('/api/accounts/' + acc);
                     rows += `<tr>
                         <td style="font-family:monospace;color:var(--text-primary)">${data.accountnumber || data.accountNumber}</td>
                         <td>${data.accountholdername || data.accountHolderName}</td>
-                        <td><span class="badge badge-info">${data.accounttype || data.accountType || '—'}</span></td>
+                        <td><span class="badge badge-info">${data.accounttype || data.accountType || data.acctype || '—'}</span></td>
                         <td style="font-weight:600;color:var(--accent-green)">$${parseFloat(data.balance).toLocaleString()}</td>
                         <td><span class="badge badge-success">${data.status || 'ACTIVE'}</span></td>
                     </tr>`;
@@ -879,6 +928,26 @@
                     <td><button class="btn" style="padding:4px 10px;font-size:11px" onclick="updateAlertStatus(${a.id})">Update</button></td>
                 </tr>`).join('');
             } catch (e) { /* fraud service may not be running */ }
+        }
+
+        async function loadTransactions() {
+            try {
+                const data = await api('/api/transactions');
+                const txns = data.content || data || [];
+                const body = document.getElementById('transactions-body');
+                if (!txns || txns.length === 0) {
+                    body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:40px;">No transactions yet</td></tr>';
+                    return;
+                }
+                body.innerHTML = txns.map(t => `<tr>
+                    <td style="font-family:monospace;font-size:12px">${(t.id || t.transactionId || '').substring(0, 12)}...</td>
+                    <td>${t.senderAccountId || '—'}</td>
+                    <td>${t.receiverAccountId || '—'}</td>
+                    <td style="font-weight:600;color:var(--text-primary)">$${parseFloat(t.amount).toLocaleString()}</td>
+                    <td><span class="badge ${t.status === 'SUCCESS' ? 'badge-success' : 'badge-danger'}">${t.status}</span></td>
+                </tr>`).join('');
+                document.getElementById('stat-transactions').textContent = txns.length;
+            } catch (e) { /* transaction service may not be running */ }
         }
 
         async function updateAlertStatus(id) {
