@@ -723,6 +723,14 @@
         ];
         
         window.mockTransactions = window.mockTransactions || [];
+        
+        // Seed default accounts for Demo Mode
+        let knownAccounts = window.knownAccounts || [
+            { accountNumber: 'ACC-552190', accountholdername: 'Alice Smith', acctype: 'SAVINGS', balance: 50000 },
+            { accountNumber: 'ACC-119432', accountholdername: 'Bob Johnson', acctype: 'CHECKING', balance: 15000 },
+            { accountNumber: 'ACC-883120', accountholdername: 'Charlie Davis', acctype: 'BUSINESS', balance: 250000 }
+        ];
+        window.knownAccounts = knownAccounts;
 
         async function api(path, opts = {}) {
             if (!jwtToken && path !== '/api/auth/login') {
@@ -763,6 +771,18 @@
                         return newAcc;
                     }
                     if (path === '/api/transactions' && opts.method === 'POST') {
+                        // Token Bucket DDoS Simulation (Gateway Rate Limiter)
+                        window.tokenBucket = window.tokenBucket || { tokens: 10, lastRefill: Date.now() };
+                        const nowMs = Date.now();
+                        const timePassed = (nowMs - window.tokenBucket.lastRefill) / 1000;
+                        window.tokenBucket.tokens = Math.min(10, window.tokenBucket.tokens + (timePassed * 5));
+                        window.tokenBucket.lastRefill = nowMs;
+                        
+                        if (window.tokenBucket.tokens < 1) {
+                            throw new Error("HTTP 429 Too Many Requests: API Gateway Token Bucket (Anti-DDoS) triggered. Please slow down.");
+                        }
+                        window.tokenBucket.tokens -= 1;
+
                         const payload = JSON.parse(opts.body);
                         const sender = payload.senderAccountNumber;
                         const receiver = payload.receiverAccountNumber;
@@ -788,7 +808,7 @@
 
                         // 3. Simulate Fraud Engine Logic (Velocity Rule)
                         if (window.txTimestamps.length > 3) {
-                            window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, severity: 'HIGH', status: 'OPEN' });
+                            window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, reason: 'Velocity Rule Breach: >3 transfers in 60s', severity: 'HIGH', status: 'OPEN' });
                             throw new Error("FRAUD BLOCKED: Velocity Rule Breach. Too many transactions in 60s.");
                         }
                         
@@ -863,7 +883,6 @@
         }
 
         // ─── Load Accounts ───
-        let knownAccounts = [];
         async function loadAccounts() {
             // Account service doesn't have a "get all" endpoint, so we track created ones locally
             const body = document.getElementById('accounts-body');
