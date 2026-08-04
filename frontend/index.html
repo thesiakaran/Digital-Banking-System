@@ -716,21 +716,28 @@
             }
         }
 
-        window.mockFraudAlerts = window.mockFraudAlerts || [
+        function saveMockState() {
+            localStorage.setItem('mockFraudAlerts', JSON.stringify(window.mockFraudAlerts));
+            localStorage.setItem('mockTransactions', JSON.stringify(window.mockTransactions));
+            localStorage.setItem('knownAccounts', JSON.stringify(window.knownAccounts));
+        }
+
+        window.mockFraudAlerts = JSON.parse(localStorage.getItem('mockFraudAlerts')) || [
             { id: 9021, transactionId: 'TXN-' + Date.now(), senderAccountId: 'ACC-552190', amount: 5000, riskScore: 110, reason: 'Velocity Rule Breach: 5 transfers in 60s', severity: 'HIGH', status: 'OPEN' },
             { id: 9022, transactionId: 'TXN-' + (Date.now()-86000), senderAccountId: 'ACC-119432', amount: 500, riskScore: 85, reason: 'New Payee + Round Amount ($500.00)', severity: 'MEDIUM', status: 'INVESTIGATING' },
             { id: 9023, transactionId: 'TXN-' + (Date.now()-120000), senderAccountId: 'ACC-883120', amount: 150000, riskScore: 150, reason: 'Threshold Exceeded (>$100,000)', severity: 'CRITICAL', status: 'OPEN' }
         ];
         
-        window.mockTransactions = window.mockTransactions || [];
+        window.mockTransactions = JSON.parse(localStorage.getItem('mockTransactions')) || [];
         
         // Seed default accounts for Demo Mode
-        let knownAccounts = window.knownAccounts || [
+        let knownAccounts = JSON.parse(localStorage.getItem('knownAccounts')) || [
             { accountNumber: 'ACC-552190', accountholdername: 'Alice Smith', acctype: 'SAVINGS', balance: 50000 },
             { accountNumber: 'ACC-119432', accountholdername: 'Bob Johnson', acctype: 'CHECKING', balance: 15000 },
             { accountNumber: 'ACC-883120', accountholdername: 'Charlie Davis', acctype: 'BUSINESS', balance: 250000 }
         ];
         window.knownAccounts = knownAccounts;
+        saveMockState();
 
         async function api(path, opts = {}) {
             if (!jwtToken && path !== '/api/auth/login') {
@@ -768,6 +775,7 @@
                             ...payload 
                         };
                         knownAccounts.push(newAcc);
+                        saveMockState();
                         return newAcc;
                     }
                     if (path === '/api/transactions' && opts.method === 'POST') {
@@ -810,6 +818,7 @@
                         if (window.txTimestamps.length > 3) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, reason: 'Velocity Rule Breach: >3 transfers in 60s', severity: 'HIGH', status: 'OPEN' });
                             window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
+                            saveMockState();
                             throw new Error("FRAUD BLOCKED: Velocity Rule Breach. Too many transactions in 60s.");
                         }
                         
@@ -817,11 +826,13 @@
                         if (amount > 100000) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 150, severity: 'CRITICAL', status: 'OPEN' });
                             window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
+                            saveMockState();
                             throw new Error("FRAUD BLOCKED: Amount exceeds maximum threshold limit. SAGA Rollback executed.");
                         }
 
                         const successTxn = { id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'SUCCESS' };
                         window.mockTransactions.unshift(successTxn);
+                        saveMockState();
                         return successTxn;
                     }
                     if (path === '/api/transactions' && (!opts.method || opts.method === 'GET')) {
