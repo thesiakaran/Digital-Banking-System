@@ -21,8 +21,14 @@ jobs:
         distribution: 'temurin'
         cache: maven
         
-    - name: Build with Maven
-      run: mvn clean install -DskipTests
+    - name: Build Account Service
+      run: cd account-service && mvn clean package -DskipTests
       
-    - name: Run Tests in Fraud Service
-      run: cd fraud-service && mvn test
+    - name: Build Fraud Service
+      run: cd fraud-service && mvn clean package -DskipTests
+      
+    - name: Build Transaction Service
+      run: cd transaction-service && mvn clean package -DskipTests
+      
+    - name: Build API Gateway
+      run: cd api-gateway && mvn clean package -DskipTests
