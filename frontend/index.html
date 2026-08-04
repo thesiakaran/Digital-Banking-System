@@ -809,12 +809,14 @@
                         // 3. Simulate Fraud Engine Logic (Velocity Rule)
                         if (window.txTimestamps.length > 3) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, reason: 'Velocity Rule Breach: >3 transfers in 60s', severity: 'HIGH', status: 'OPEN' });
+                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
                             throw new Error("FRAUD BLOCKED: Velocity Rule Breach. Too many transactions in 60s.");
                         }
                         
                         // 2. Simulate Fraud Engine Logic (Threshold Rule)
                         if (amount > 100000) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 150, severity: 'CRITICAL', status: 'OPEN' });
+                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
                             throw new Error("FRAUD BLOCKED: Amount exceeds maximum threshold limit. SAGA Rollback executed.");
                         }
 
