@@ -564,10 +564,10 @@
             <div class="modal-header"><h3>New Transfer</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
             <div class="modal-body">
                 <div class="form-group"><label class="form-label">Sender Account Number</label><input class="form-input" id="t-sender" placeholder="Enter sender account #"></div>
-                <div class="form-group"><label class="form-label">Receiver Account Number</label><input class="form-input" id="t-receiver" placeholder="Enter receiver account #"></div>
+                <div class="form-group" id="t-receiver-group"><label class="form-label">Receiver Account Number</label><input class="form-input" id="t-receiver" placeholder="Enter receiver account #"></div>
                 <div class="form-row">
                     <div class="form-group"><label class="form-label">Amount ($)</label><input class="form-input" id="t-amount" type="number" placeholder="500" min="1"></div>
-                    <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="t-type"><option value="TRANSFER">Transfer</option><option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdrawal</option></select></div>
+                    <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="t-type" onchange="document.getElementById('t-receiver-group').style.display = (this.value === 'TRANSFER') ? 'block' : 'none'"><option value="TRANSFER">Transfer</option><option value="DEPOSIT">Deposit</option><option value="WITHDRAWAL">Withdrawal</option></select></div>
                 </div>
                 <div style="margin-top: 12px; padding: 12px; background: rgba(59,130,246,0.08); border-radius: 8px; font-size: 12px; color: var(--accent-blue);">
                     ℹ️ Transaction will go through SAGA flow: Hold → Fraud Check → Commit/Rollback
@@ -805,19 +805,27 @@
                         
                         // 1. Validate if accounts actually exist locally
                         const senderExists = knownAccounts.find(a => (a.accountNumber || a.accountnumber || a) === sender);
-                        const receiverExists = knownAccounts.find(a => (a.accountNumber || a.accountnumber || a) === receiver);
+                        let receiverExists = null;
 
                         if (!senderExists) {
                             throw new Error("Transaction Failed: Sender account does not exist in the database.");
                         }
-                        if (!receiverExists) {
-                            throw new Error("SAGA Rollback: Receiver account not found. Funds returned to sender.");
+
+                        if (payload.type === 'TRANSFER') {
+                            receiverExists = knownAccounts.find(a => (a.accountNumber || a.accountnumber || a) === receiver);
+                            if (!receiverExists) {
+                                throw new Error("SAGA Rollback: Receiver account not found. Funds returned to sender.");
+                            }
+                        }
+
+                        if (payload.type !== 'DEPOSIT' && senderExists.balance < amount) {
+                            throw new Error("Transaction Failed: Insufficient funds in sender account.");
                         }
 
                         // 3. Simulate Fraud Engine Logic (Velocity Rule)
                         if (window.txTimestamps.length > 3) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 120, reason: 'Velocity Rule Breach: >3 transfers in 60s', severity: 'HIGH', status: 'OPEN' });
-                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
+                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: payload.type === 'TRANSFER' ? receiver : 'N/A', amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
                             saveMockState();
                             throw new Error("FRAUD BLOCKED: Velocity Rule Breach. Too many transactions in 60s.");
                         }
@@ -825,12 +833,22 @@
                         // 2. Simulate Fraud Engine Logic (Threshold Rule)
                         if (amount > 100000) {
                             window.mockFraudAlerts.unshift({ id: Date.now(), transactionId: 'TXN-' + Date.now(), senderAccountId: sender, amount: amount, riskScore: 150, severity: 'CRITICAL', status: 'OPEN' });
-                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
+                            window.mockTransactions.unshift({ id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: payload.type === 'TRANSFER' ? receiver : 'N/A', amount: amount, timestamp: new Date().toISOString(), status: 'FAILED (SAGA ROLLBACK)' });
                             saveMockState();
                             throw new Error("FRAUD BLOCKED: Amount exceeds maximum threshold limit. SAGA Rollback executed.");
                         }
 
-                        const successTxn = { id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: receiver, amount: amount, timestamp: new Date().toISOString(), status: 'SUCCESS' };
+                        if (payload.type === 'WITHDRAWAL' || payload.type === 'TRANSFER') {
+                            senderExists.balance -= amount;
+                        } else if (payload.type === 'DEPOSIT') {
+                            senderExists.balance += amount;
+                        }
+
+                        if (payload.type === 'TRANSFER') {
+                            receiverExists.balance += amount;
+                        }
+
+                        const successTxn = { id: 'TXN-' + Date.now(), senderAccountId: sender, receiverAccountId: payload.type === 'TRANSFER' ? receiver : 'N/A (' + payload.type + ')', amount: amount, timestamp: new Date().toISOString(), status: 'SUCCESS', newBalance: senderExists.balance };
                         window.mockTransactions.unshift(successTxn);
                         saveMockState();
                         return successTxn;
@@ -885,7 +903,7 @@
             try {
                 const data = {
                     senderAccountNumber: document.getElementById('t-sender').value,
-                    receiverAccountNumber: document.getElementById('t-receiver').value,
+                    receiverAccountNumber: document.getElementById('t-type').value === 'TRANSFER' ? document.getElementById('t-receiver').value : 'N/A',
                     amount: parseFloat(document.getElementById('t-amount').value),
                     type: document.getElementById('t-type').value
                 };
@@ -895,7 +913,8 @@
                     headers: { 'Idempotency-Key': key },
                     body: JSON.stringify(data)
                 });
-                toast('Transaction initiated! Status: ' + result.status, result.status === 'SUCCESS' ? 'success' : 'info');
+                toast('Transaction ' + result.status + '! New Balance: $' + (result.newBalance || 0).toLocaleString(), result.status === 'SUCCESS' ? 'success' : 'info');
+                loadAccounts();
                 closeModal();
                 const icon = result.status === 'FAILURE' ? 'block' : 'send';
                 addActivity(icon, data.type + ' — ' + result.status, data.senderAccountNumber + ' → ' + data.receiverAccountNumber, '$' + data.amount);
