@@ -842,7 +842,14 @@
                         return { content: window.mockFraudAlerts };
                     }
                     if (path === '/api/fraud/statistics') {
-                        return { blockedCount: 142 + window.mockFraudAlerts.length - 3, flaggedCount: 89, totalRiskScore: 5240 };
+                        const open = window.mockFraudAlerts.filter(a => a.status === 'OPEN').length;
+                        const inv = window.mockFraudAlerts.filter(a => a.status === 'INVESTIGATING').length;
+                        return { 
+                            totalAlerts: window.mockFraudAlerts.length, 
+                            openAlerts: open, 
+                            investigatingAlerts: inv, 
+                            resolvedAlerts: window.mockFraudAlerts.length - open - inv
+                        };
                     }
                     if (path === '/api/fraud/blacklist') {
                         return [];
